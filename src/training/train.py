@@ -1,6 +1,6 @@
 import os
 import argparse
-from trainer import train_model
+from src.training.trainer import train_model
 
 
 def main():
@@ -67,7 +67,7 @@ def main():
         n_splits=args.n_splits,
     )
 
-    print(f"Training complete. Model saved to output directory.")
+    print("Training complete. Model saved to output directory.")
 
     return model
 

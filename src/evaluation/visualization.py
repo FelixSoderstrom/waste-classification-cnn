@@ -11,7 +11,7 @@ import random
 import sys
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-from evaluation.evaluation import evaluate_model
+from evaluation.evaluation import evaluate_model, get_default_model_path
 from network.network import WasteClassifier
 
 
@@ -258,7 +258,7 @@ def plot_class_distribution(
     plt.close()
 
 
-def visualize_model_performance(model_path="output/trained_model.ckpt"):
+def visualize_model_performance(model_path=None):
     """
     Visualize the model's performance by plotting confusion matrix,
     sample predictions, and class distribution.
@@ -266,6 +266,15 @@ def visualize_model_performance(model_path="output/trained_model.ckpt"):
     Args:
         model_path: Path to the trained model checkpoint
     """
+    # Use default path finder if no path provided
+    if model_path is None:
+        model_path = get_default_model_path()
+        print(f"Using automatically detected model: {model_path}")
+
+    # Check if model exists
+    if not os.path.exists(model_path):
+        raise FileNotFoundError(f"Model file not found at {model_path}")
+
     # Check if GPU is available
     if torch.cuda.is_available():
         print("CUDA is available! Using GPU for visualization.")
@@ -317,11 +326,13 @@ def main():
     parser = argparse.ArgumentParser(
         description="Visualize model performance"
     )
+
+    default_model_path = get_default_model_path()
     parser.add_argument(
         "--model_path",
         type=str,
-        default="output/trained_model.ckpt",
-        help="Path to the trained model checkpoint",
+        default=default_model_path,
+        help=f"Path to the trained model checkpoint (default: {default_model_path})",
     )
 
     args = parser.parse_args()

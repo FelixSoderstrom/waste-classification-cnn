@@ -8,6 +8,8 @@ from torch.utils.data import DataLoader, random_split
 from torchvision import transforms, datasets
 from sklearn.model_selection import KFold
 import re
+import time
+import wandb
 
 import sys
 
@@ -105,13 +107,16 @@ def load_datasets(data_dir="src/dataset", batch_size=32, num_workers=4):
     val_dataset = datasets.ImageFolder(val_dir, transform=val_transforms)
     test_dataset = datasets.ImageFolder(test_dir, transform=val_transforms)
 
-    # Create dataloaders
+    # Create dataloaders with persistent workers for better performance
+    persistent_workers = num_workers > 0
+
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=batch_size,
         shuffle=True,
         num_workers=num_workers,
         pin_memory=True,
+        persistent_workers=persistent_workers,  # Keep workers alive between iterations
     )
 
     val_dataloader = DataLoader(
@@ -120,6 +125,7 @@ def load_datasets(data_dir="src/dataset", batch_size=32, num_workers=4):
         shuffle=False,
         num_workers=num_workers,
         pin_memory=True,
+        persistent_workers=persistent_workers,  # Keep workers alive between iterations
     )
 
     test_dataloader = DataLoader(
@@ -128,6 +134,7 @@ def load_datasets(data_dir="src/dataset", batch_size=32, num_workers=4):
         shuffle=False,
         num_workers=num_workers,
         pin_memory=True,
+        persistent_workers=persistent_workers,  # Keep workers alive between iterations
     )
 
     # Get class names from the training dataset
@@ -164,6 +171,12 @@ def train_model(
     """
     # Set random seed for reproducibility
     pl.seed_everything(42)
+
+    # Enable Tensor Core optimizations for RTX GPUs
+    torch.set_float32_matmul_precision(
+        "medium"
+    )  # Balance between speed and precision
+    print("Enabled Tensor Core optimizations with 'medium' precision")
 
     # Check if GPU is available - with more robust detection
     if torch.cuda.is_available():
@@ -253,6 +266,10 @@ def train_standard(
     Returns:
         pl.LightningModule: The trained model
     """
+    # Make sure any existing wandb run is finished
+    if wandb.run is not None:
+        wandb.finish()
+
     # Initialize the model
     model = WasteClassifier(
         lr=lr, weight_decay=weight_decay, class_names=class_names
@@ -260,7 +277,14 @@ def train_standard(
 
     # Set up Weights & Biases logger with session-specific run name
     run_name = f"session_{session_number}-standard"
-    wandb_logger = WandbLogger(project=project_name, name=run_name)
+    unique_id = f"{run_name}_{int(time.time())}"
+
+    wandb_logger = WandbLogger(
+        project=project_name,
+        name=run_name,
+        id=unique_id,
+        group=f"session_{session_number}",
+    )
 
     # Set up callbacks
     checkpoint_callback = ModelCheckpoint(
@@ -298,6 +322,9 @@ def train_standard(
     final_model_path = os.path.join(session_dir, "trained_model.ckpt")
     trainer.save_checkpoint(final_model_path)
     print(f"Model saved to: {final_model_path}")
+
+    # Make sure to finish the wandb run
+    wandb.finish()
 
     return model
 
@@ -347,10 +374,17 @@ def train_with_cross_validation(
     best_model_path = None
     best_val_score = 0
 
+    # Check if we can use persistent workers
+    persistent_workers = train_dataloader.num_workers > 0
+
     # Loop through folds
     for fold, (train_idx, val_idx) in enumerate(
         kfold.split(range(len(train_dataset)))
     ):
+        # Make sure any existing wandb run is finished before starting a new one
+        if wandb.run is not None:
+            wandb.finish()
+
         fold_number = fold + 1
         print(f"Fold {fold_number}/{n_splits}")
 
@@ -368,6 +402,7 @@ def train_with_cross_validation(
             shuffle=True,
             num_workers=train_dataloader.num_workers,
             pin_memory=True,
+            persistent_workers=persistent_workers,  # Keep workers alive between iterations
         )
 
         fold_val_loader = DataLoader(
@@ -376,6 +411,7 @@ def train_with_cross_validation(
             shuffle=False,
             num_workers=train_dataloader.num_workers,
             pin_memory=True,
+            persistent_workers=persistent_workers,  # Keep workers alive between iterations
         )
 
         # Initialize the model for this fold
@@ -383,9 +419,16 @@ def train_with_cross_validation(
             lr=lr, weight_decay=weight_decay, class_names=class_names
         )
 
-        # Set up Weights & Biases logger with session and fold in the name
+        # Set up Weights & Biases logger with unique run ID to prevent overwriting
         run_name = f"session_{session_number}-fold_{fold_number}"
-        wandb_logger = WandbLogger(project=project_name, name=run_name)
+        unique_id = f"{run_name}_{int(time.time())}"
+
+        wandb_logger = WandbLogger(
+            project=project_name,
+            name=run_name,
+            id=unique_id,
+            group=f"session_{session_number}",  # Group all folds from this session
+        )
 
         # Set up callbacks
         checkpoint_callback = ModelCheckpoint(
@@ -424,15 +467,28 @@ def train_with_cross_validation(
             best_val_score = val_score
             best_model_path = checkpoint_callback.best_model_path
 
+        # Explicitly finish the wandb run
+        wandb.finish()
+
+    # Make sure any existing wandb run is finished before creating final one
+    if wandb.run is not None:
+        wandb.finish()
+
     # Load the best model from cross-validation
     best_model = WasteClassifier.load_from_checkpoint(best_model_path)
 
     # Create a final trainer for testing with explicit GPU configuration
+    best_run_name = f"session_{session_number}-best-model"
+    best_run_id = f"{best_run_name}_{int(time.time())}"
+
     test_trainer = pl.Trainer(
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
         devices=1 if torch.cuda.is_available() else "auto",
         logger=WandbLogger(
-            project=project_name, name=f"session_{session_number}-best-model"
+            project=project_name,
+            name=best_run_name,
+            id=best_run_id,
+            group=f"session_{session_number}",  # Same group as the folds
         ),
         deterministic=True,
     )
@@ -445,14 +501,15 @@ def train_with_cross_validation(
     test_trainer.save_checkpoint(final_model_path)
     print(f"Best model saved to: {final_model_path}")
 
+    # Make sure to finish the final wandb run
+    wandb.finish()
+
     return best_model
 
 
 if __name__ == "__main__":
-    train_model(
-        lr=0.001,
-        weight_decay=0.0005,
-        batch_size=32,
-        max_epochs=10,
-        use_cross_validation=True,
+    print(
+        "This file is not meant to be executed directly.\n"
+        "If you want to train a new model, run train.py instead.\n"
+        "You can also run it with the '--h' flag to see the available arguments."
     )
