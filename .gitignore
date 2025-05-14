@@ -2,6 +2,8 @@ ignore_folder/
 original_dataset/
 dataset/
 venv/
+wandb/
+output/
 __pycache__/
 *.pyc
 *.pyo
