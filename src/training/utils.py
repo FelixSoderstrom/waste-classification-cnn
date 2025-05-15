@@ -164,7 +164,7 @@ def create_training_summary(
     elapsed_time = time.time() - training_start_time
     elapsed_str = str(datetime.timedelta(seconds=int(elapsed_time)))
 
-    with open(summary_path, "w") as f:
+    with open(summary_path, "w", encoding="utf-8") as f:
         f.write("=" * 80 + "\n")
         f.write("WASTE CLASSIFICATION MODEL - TRAINING SUMMARY\n")
         f.write("=" * 80 + "\n\n")
