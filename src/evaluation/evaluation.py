@@ -48,10 +48,10 @@ def load_test_data(
             - DataLoader for the test dataset
             - List of class names
     """
-    _, val_transforms = get_data_transforms()
+    transforms_obj = get_data_transforms()
 
     test_dir = os.path.join(data_dir, "test")
-    test_dataset = datasets.ImageFolder(test_dir, transform=val_transforms)
+    test_dataset = datasets.ImageFolder(test_dir, transform=transforms_obj)
 
     persistent_workers = num_workers > 0
 
