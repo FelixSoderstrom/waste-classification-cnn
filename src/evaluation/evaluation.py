@@ -1,34 +1,52 @@
+"""Model evaluation functionality for waste classification models.
+
+This module provides functions to evaluate trained waste classification models
+on test datasets, measuring performance metrics like accuracy, precision, recall,
+and F1-score. It includes functionality to:
+- Load test datasets
+- Load and run inference with trained models
+- Generate and format evaluation metrics
+- Support GPU acceleration when available
+"""
+
 import os
+import sys
+from typing import Dict, List, Tuple, Any, Optional
+
+import pandas as pd
 import torch
 import pytorch_lightning as pl
-from sklearn.metrics import classification_report, confusion_matrix
-import numpy as np
 from torch.utils.data import DataLoader
-from torchvision import transforms, datasets
-import pandas as pd
-import sys
-import glob
+from torchvision import datasets
+from sklearn.metrics import classification_report, confusion_matrix
+
+# Add parent directory to path for imports
+parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if parent_dir not in sys.path:
+    sys.path.insert(0, parent_dir)
 
 from network.network import WasteClassifier
 from training.utils import get_data_transforms
 from evaluation.utils import get_default_model_path
 
-parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-if parent_dir not in sys.path:
-    sys.path.insert(0, parent_dir)
 
+def load_test_data(
+    data_dir: str = "src/dataset", batch_size: int = 32, num_workers: int = 4
+) -> Tuple[DataLoader, List[str]]:
+    """Load the test dataset for model evaluation.
 
-def load_test_data(data_dir="src/dataset", batch_size=32, num_workers=4):
-    """
-    Load the test dataset.
+    Prepares a DataLoader for the test dataset with appropriate transforms
+    and settings for efficient evaluation.
 
     Args:
-        data_dir: Path to the dataset directory
-        batch_size: Batch size for the dataloader
-        num_workers: Number of workers for the dataloader
+        data_dir: Path to the root dataset directory
+        batch_size: Number of samples per batch
+        num_workers: Number of worker processes for data loading
 
     Returns:
-        tuple: (test_dataloader, class_names)
+        A tuple containing:
+            - DataLoader for the test dataset
+            - List of class names
     """
     _, val_transforms = get_data_transforms()
 
@@ -51,18 +69,37 @@ def load_test_data(data_dir="src/dataset", batch_size=32, num_workers=4):
     return test_dataloader, class_names
 
 
-def evaluate_model(model_path=None, batch_size=32, num_workers=10):
-    """
-    Evaluate a trained model on the test set.
+def evaluate_model(
+    model_path: Optional[str] = None,
+    batch_size: int = 32,
+    num_workers: int = 10,
+) -> Dict[str, Any]:
+    """Evaluate a trained waste classification model on the test set.
+
+    Loads a trained model, runs inference on the test dataset, and computes
+    various evaluation metrics including accuracy, precision, recall, and F1-score.
 
     Args:
-        model_path: Path to the trained model checkpoint
-        batch_size: Batch size for the dataloader
-        num_workers: Number of workers for the dataloader
+        model_path: Path to the trained model checkpoint file
+        batch_size: Number of samples per batch during evaluation
+        num_workers: Number of worker processes for data loading
 
     Returns:
-        dict: Evaluation results including accuracy, precision, recall, f1-score,
-              along with the loaded model and device for visualization
+        Dictionary containing comprehensive evaluation results:
+            - test_accuracy: Overall accuracy on test set
+            - test_loss: Loss on test set
+            - classification_report: Per-class precision, recall, F1
+            - confusion_matrix: Matrix showing predicted vs actual class counts
+            - predictions: Raw model predictions
+            - targets: Ground truth labels
+            - class_names: Names of the classes
+            - model: Loaded model instance
+            - device: Device used for evaluation
+            - model_path: Path to the model checkpoint
+            - session_dir: Directory of the training session
+
+    Raises:
+        FileNotFoundError: If the specified model path does not exist
     """
     if model_path is None:
         model_path = get_default_model_path()
@@ -97,7 +134,6 @@ def evaluate_model(model_path=None, batch_size=32, num_workers=10):
         model_path, map_location=device
     )
     model.eval()
-
     model = model.to(device)
 
     mismatched_params = 0
@@ -123,8 +159,8 @@ def evaluate_model(model_path=None, batch_size=32, num_workers=10):
     print(f"Test accuracy: {test_results[0]['test_acc']:.4f}")
     print(f"Test loss: {test_results[0]['test_loss']:.4f}")
 
-    all_preds = []
-    all_targets = []
+    all_preds: List[int] = []
+    all_targets: List[int] = []
 
     with torch.no_grad():
         for batch in test_dataloader:
@@ -174,8 +210,15 @@ def evaluate_model(model_path=None, batch_size=32, num_workers=10):
     return results
 
 
-def main():
-    """Main function to evaluate the model."""
+def main() -> Dict[str, Any]:
+    """Run model evaluation from command line arguments.
+
+    Parses command line arguments and runs model evaluation with the
+    specified parameters.
+
+    Returns:
+        Dictionary containing the evaluation results
+    """
     import argparse
 
     parser = argparse.ArgumentParser(

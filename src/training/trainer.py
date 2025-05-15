@@ -1,52 +1,66 @@
+"""Training functionality for waste classification models.
+
+This module contains functions to train waste classification models using
+either standard training or k-fold cross-validation. It handles:
+- Setting up model parameters and training environments
+- Configuring callbacks like early stopping and checkpointing
+- Integrating with Weights & Biases for experiment tracking
+- GPU acceleration when available
+"""
+
 import os
+import sys
+import time
+from typing import List, Optional
+
 import torch
 import pytorch_lightning as pl
-from pytorch_lightning.loggers import WandbLogger
-from pytorch_lightning.callbacks import ModelCheckpoint, EarlyStopping
-from pytorch_lightning.callbacks import LearningRateMonitor
-from torch.utils.data import DataLoader, random_split
-from torchvision import transforms, datasets
-from sklearn.model_selection import KFold
-import re
-import time
 import wandb
+from pytorch_lightning.loggers import WandbLogger
+from pytorch_lightning.callbacks import (
+    ModelCheckpoint,
+    EarlyStopping,
+    LearningRateMonitor,
+)
+from torch.utils.data import DataLoader, Subset
+from sklearn.model_selection import KFold
 
-import sys
-
+# Add parent directory to path to enable imports
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from network.network import WasteClassifier
 from training.utils import (
     get_next_session_number,
-    get_data_transforms,
     load_datasets,
 )
 
 
 def train_model(
-    lr=0.001,
-    weight_decay=0.0005,
-    batch_size=32,
-    max_epochs=10,
-    num_workers=4,
-    project_name="waste-material-classification",
-    use_cross_validation=True,
-    n_splits=5,
-):
-    """
-    Train the waste classification model.
+    lr: float = 0.001,
+    weight_decay: float = 0.0005,
+    batch_size: int = 32,
+    max_epochs: int = 10,
+    num_workers: int = 4,
+    project_name: str = "waste-material-classification",
+    use_cross_validation: bool = True,
+    n_splits: int = 5,
+) -> pl.LightningModule:
+    """Train the waste classification model.
+
+    Prepares the environment and training settings, then delegates to either
+    standard training or cross-validation depending on configuration.
 
     Args:
-        lr: Learning rate
-        weight_decay: Weight decay
-        batch_size: Batch size
-        max_epochs: Maximum number of epochs
+        lr: Learning rate for optimizer
+        weight_decay: Weight decay coefficient for optimizer
+        batch_size: Number of samples per batch
+        max_epochs: Maximum number of training epochs
         num_workers: Number of workers for the dataloaders
         project_name: Name of the project for W&B logging
         use_cross_validation: Whether to use cross-validation
         n_splits: Number of cross-validation splits
 
     Returns:
-        pl.LightningModule: The trained model
+        The trained PyTorch Lightning model
     """
     pl.seed_everything(42)
 
@@ -77,10 +91,10 @@ def train_model(
 
     if use_cross_validation:
         return train_with_cross_validation(
-            train_dataloader,
-            val_dataloader,
-            test_dataloader,
-            class_names,
+            train_dataloader=train_dataloader,
+            val_dataloader=val_dataloader,
+            test_dataloader=test_dataloader,
+            class_names=class_names,
             lr=lr,
             weight_decay=weight_decay,
             max_epochs=max_epochs,
@@ -89,50 +103,51 @@ def train_model(
             session_number=session_number,
             session_dir=session_dir,
         )
-    elif not use_cross_validation:
-        return train_standard(
-            train_dataloader,
-            val_dataloader,
-            test_dataloader,
-            class_names,
-            lr=lr,
-            weight_decay=weight_decay,
-            max_epochs=max_epochs,
-            project_name=project_name,
-            session_number=session_number,
-            session_dir=session_dir,
-        )
+    return train_standard(
+        train_dataloader=train_dataloader,
+        val_dataloader=val_dataloader,
+        test_dataloader=test_dataloader,
+        class_names=class_names,
+        lr=lr,
+        weight_decay=weight_decay,
+        max_epochs=max_epochs,
+        project_name=project_name,
+        session_number=session_number,
+        session_dir=session_dir,
+    )
 
 
 def train_standard(
-    train_dataloader,
-    val_dataloader,
-    test_dataloader,
-    class_names,
-    lr=0.001,
-    weight_decay=0.0005,
-    max_epochs=10,
-    project_name="waste-material-classification",
-    session_number=1,
-    session_dir=None,
-):
-    """
-    Train the model using standard training with early stopping.
+    train_dataloader: DataLoader,
+    val_dataloader: DataLoader,
+    test_dataloader: DataLoader,
+    class_names: List[str],
+    lr: float = 0.001,
+    weight_decay: float = 0.0005,
+    max_epochs: int = 10,
+    project_name: str = "waste-material-classification",
+    session_number: int = 1,
+    session_dir: Optional[str] = None,
+) -> pl.LightningModule:
+    """Train model using standard training with early stopping.
+
+    Configures the model, trainer, and callbacks for a standard training run
+    (no cross-validation). Includes early stopping and model checkpointing.
 
     Args:
-        train_dataloader: Training data loader
-        val_dataloader: Validation data loader
-        test_dataloader: Test data loader
-        class_names: List of class names
-        lr: Learning rate
-        weight_decay: Weight decay
-        max_epochs: Maximum number of epochs
+        train_dataloader: DataLoader for training data
+        val_dataloader: DataLoader for validation data
+        test_dataloader: DataLoader for test data
+        class_names: List of class names for the dataset
+        lr: Learning rate for optimizer
+        weight_decay: Weight decay coefficient for optimizer
+        max_epochs: Maximum number of training epochs
         project_name: Name of the project for W&B logging
-        session_number: Current session number
-        session_dir: Directory for session outputs
+        session_number: Current session number for organization
+        session_dir: Directory where outputs will be saved
 
     Returns:
-        pl.LightningModule: The trained model
+        The trained PyTorch Lightning model
     """
     if wandb.run is not None:
         wandb.finish()
@@ -188,40 +203,43 @@ def train_standard(
 
 
 def train_with_cross_validation(
-    train_dataloader,
-    val_dataloader,
-    test_dataloader,
-    class_names,
-    lr=0.001,
-    weight_decay=0.0005,
-    max_epochs=10,
-    project_name="waste-material-classification",
-    n_splits=5,
-    session_number=1,
-    session_dir=None,
-):
-    """
-    Train the model using cross-validation.
+    train_dataloader: DataLoader,
+    val_dataloader: DataLoader,
+    test_dataloader: DataLoader,
+    class_names: List[str],
+    lr: float = 0.001,
+    weight_decay: float = 0.0005,
+    max_epochs: int = 10,
+    project_name: str = "waste-material-classification",
+    n_splits: int = 5,
+    session_number: int = 1,
+    session_dir: Optional[str] = None,
+) -> pl.LightningModule:
+    """Train model using k-fold cross-validation.
+
+    Performs k-fold cross-validation by splitting the training data into
+    train and validation sets for each fold. Returns the best model based
+    on validation score across folds.
 
     Args:
-        train_dataloader: Training data loader
-        val_dataloader: Validation data loader
-        test_dataloader: Test data loader
-        class_names: List of class names
-        lr: Learning rate
-        weight_decay: Weight decay
-        max_epochs: Maximum number of epochs
+        train_dataloader: DataLoader for training data
+        val_dataloader: DataLoader for validation data
+        test_dataloader: DataLoader for test data
+        class_names: List of class names for the dataset
+        lr: Learning rate for optimizer
+        weight_decay: Weight decay coefficient for optimizer
+        max_epochs: Maximum number of training epochs
         project_name: Name of the project for W&B logging
-        n_splits: Number of cross-validation splits
-        session_number: Current session number
-        session_dir: Directory for session outputs
+        n_splits: Number of cross-validation folds
+        session_number: Current session number for organization
+        session_dir: Directory where outputs will be saved
 
     Returns:
-        pl.LightningModule: The best model from cross-validation
+        The best model from cross-validation based on validation accuracy
     """
-    val_scores = []
-    best_model_path = None
-    best_val_score = 0
+    val_scores: List[float] = []
+    best_model_path: Optional[str] = None
+    best_val_score: float = 0.0
 
     train_dataset = train_dataloader.dataset
     kfold = KFold(n_splits=n_splits, shuffle=True, random_state=42)
@@ -239,8 +257,8 @@ def train_with_cross_validation(
         fold_dir = os.path.join(session_dir, f"fold_{fold_number}")
         os.makedirs(fold_dir, exist_ok=True)
 
-        fold_train_subset = torch.utils.data.Subset(train_dataset, train_idx)
-        fold_val_subset = torch.utils.data.Subset(train_dataset, val_idx)
+        fold_train_subset = Subset(train_dataset, train_idx)
+        fold_val_subset = Subset(train_dataset, val_idx)
 
         fold_train_loader = DataLoader(
             fold_train_subset,

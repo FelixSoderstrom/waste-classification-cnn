@@ -1,21 +1,32 @@
+"""Utility functions for finding and managing model checkpoints.
+
+This module provides helper functions for:
+- Finding the latest training session directory
+- Locating model checkpoint files
+- Determining default model paths for evaluation
+"""
+
 import os
 import glob
+from typing import List, Tuple, Optional, Union
 
 
-def find_latest_session_dir(base_dir="output"):
-    """
-    Find the latest session directory based on its number.
+def find_latest_session_dir(base_dir: str = "output") -> Optional[str]:
+    """Find the latest training session directory based on session number.
+
+    Scans the base directory for folders with names starting with "session_"
+    followed by a number, and returns the path to the one with highest number.
 
     Args:
-        base_dir: Base directory to search in
+        base_dir: Base directory where session folders are stored
 
     Returns:
-        str: Path to the latest session directory, or None if no session directories found
+        Path to the latest session directory, or None if no session directories found
     """
     if not os.path.exists(base_dir):
         return None
 
-    session_dirs = []
+    session_dirs: List[Tuple[int, str]] = []
     for d in os.listdir(base_dir):
         full_path = os.path.join(base_dir, d)
         if os.path.isdir(full_path) and d.startswith("session_"):
@@ -34,16 +45,18 @@ def find_latest_session_dir(base_dir="output"):
     return latest_session
 
 
-def find_checkpoint_in_dir(session_dir):
-    """
-    Find a checkpoint file in the given directory.
-    Prioritizes 'trained_model.ckpt' if it exists.
+def find_checkpoint_in_dir(session_dir: str) -> Optional[str]:
+    """Find a model checkpoint file in the given directory.
+
+    Searches for checkpoint files (.ckpt) in the specified directory,
+    prioritizing 'trained_model.ckpt' if it exists. If no checkpoints are found
+    in the main directory, it also checks in fold subdirectories.
 
     Args:
-        session_dir: Directory to search in
+        session_dir: Directory to search for checkpoint files
 
     Returns:
-        str: Path to a checkpoint file, or None if no checkpoint found
+        Path to a checkpoint file, or None if no checkpoint found
     """
     if not os.path.exists(session_dir):
         return None
@@ -52,7 +65,9 @@ def find_checkpoint_in_dir(session_dir):
     if os.path.exists(trained_model_path):
         return trained_model_path
 
-    checkpoint_files = glob.glob(os.path.join(session_dir, "*.ckpt"))
+    checkpoint_files: List[str] = glob.glob(
+        os.path.join(session_dir, "*.ckpt")
+    )
 
     if not checkpoint_files:
         for d in os.listdir(session_dir):
@@ -68,12 +83,15 @@ def find_checkpoint_in_dir(session_dir):
     return None
 
 
-def get_default_model_path():
-    """
-    Automatically find the latest model checkpoint to use as default.
+def get_default_model_path() -> str:
+    """Get the default model checkpoint path for evaluation.
+
+    Automatically finds the latest session directory and model checkpoint
+    to use as a default. Falls back to a predefined path if no sessions
+    or checkpoints are found.
 
     Returns:
-        str: Path to the latest model checkpoint, or fallback default if none found
+        Path to the latest model checkpoint, or fallback default if none found
     """
     fallback_path = "output/session_1/trained_model.ckpt"
 

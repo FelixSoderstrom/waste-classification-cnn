@@ -1,6 +1,16 @@
+"""Main entry point for training and evaluating waste classification models.
+
+This script handles the entire workflow for waste classification models, including:
+1. Training a CNN model with optional cross-validation
+2. Evaluating the model on a test dataset
+3. Creating visualizations of model performance
+"""
+
 import os
 import argparse
 import time
+from typing import Dict, Any, Optional
+
 from src.training.trainer import train_model
 from src.evaluation.evaluation import evaluate_model
 from src.evaluation.visualization import create_visualizations
@@ -8,8 +18,15 @@ from src.evaluation.utils import get_default_model_path
 from src.training.utils import create_training_summary
 
 
-def main():
-    """Main function to start the training process."""
+def main() -> int:
+    """Run the waste classification model training and evaluation pipeline.
+
+    Handles command-line argument parsing and executes the appropriate training,
+    evaluation, and visualization steps based on user configuration.
+
+    Returns:
+        int: Exit status code (0 for success)
+    """
     parser = argparse.ArgumentParser(
         description="Train waste classification model"
     )
@@ -77,10 +94,10 @@ def main():
 
     os.makedirs("output", exist_ok=True)
 
-    trained_model_path = args.model_path
+    trained_model_path: Optional[str] = args.model_path
+    training_start_time: float = time.time()
 
-    training_start_time = time.time()
-
+    # Step 1: Train the model if not skipped
     if not args.skip_training:
         print("\n" + "=" * 40)
         print("STEP 1: TRAINING MODEL")
@@ -114,17 +131,20 @@ def main():
             model=trained_model,
         )
 
+    # Step 2 & 3: Evaluate and visualize model if not skipped
     if not args.skip_evaluation and trained_model_path is not None:
+        # Step 2: Evaluate the model
         print("\n" + "=" * 40)
         print("STEP 2: EVALUATING MODEL")
         print("=" * 40)
 
-        evaluation_results = evaluate_model(
+        evaluation_results: Dict[str, Any] = evaluate_model(
             model_path=trained_model_path,
             batch_size=args.batch_size,
             num_workers=args.num_workers,
         )
 
+        # Update training summary with evaluation results
         if not args.skip_training:
             create_training_summary(
                 session_dir=evaluation_results["session_dir"],
@@ -135,11 +155,12 @@ def main():
                 model=evaluation_results["model"],
             )
 
+        # Step 3: Create visualizations
         print("\n" + "=" * 40)
         print("STEP 3: CREATING VISUALIZATIONS")
         print("=" * 40)
 
-        visualization_results = create_visualizations(
+        visualization_results: Dict[str, str] = create_visualizations(
             evaluation_results=evaluation_results,
             model=evaluation_results["model"],
             device=evaluation_results["device"],

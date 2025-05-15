@@ -1,19 +1,35 @@
+"""Utility functions for the waste classification model training pipeline.
+
+This module provides helper functions for:
+- Managing training sessions and directories
+- Loading and transforming training data
+- Creating training summary reports
+"""
+
 import os
 import time
 import datetime
+from typing import Tuple, List, Dict, Any, Optional, Callable
+
+import torch
 from torchvision import transforms, datasets
 from torch.utils.data import DataLoader
 
+# Type alias for transforms
+Transform = Callable[[Any], torch.Tensor]
 
-def get_next_session_number(base_output_dir="output"):
-    """
-    Determine the next session number by examining existing directories.
+
+def get_next_session_number(base_output_dir: str = "output") -> int:
+    """Determine the next available session number for training.
+
+    Examines existing session directories in the base output directory
+    and determines the next available session number to use.
 
     Args:
-        base_output_dir: Base output directory
+        base_output_dir: Base directory where session folders are stored
 
     Returns:
-        int: Next session number
+        The next available session number
     """
     os.makedirs(base_output_dir, exist_ok=True)
 
@@ -34,15 +50,16 @@ def get_next_session_number(base_output_dir="output"):
         return max(session_dirs) + 1
 
 
-def get_data_transforms():
-    """
-    Get data transformations for training and validation/testing.
-    No augmentation is applied since the data is already augmented.
+def get_data_transforms() -> transforms.Compose:
+    """Get data transformations for training and validation datasets.
+
+    Creates preprocessing transforms for model input images.
+    No augmentation is applied since the dataset is already augmented.
 
     Returns:
-        tuple: (train_transforms, val_transforms)
+        A transforms.Compose object with image preprocessing steps.
     """
-    train_transforms = transforms.Compose(
+    return transforms.Compose(
         [
             transforms.Resize(256),
             transforms.CenterCrop(224),
@@ -53,43 +70,36 @@ def get_data_transforms():
         ]
     )
 
-    val_transforms = transforms.Compose(
-        [
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
-            transforms.ToTensor(),
-            transforms.Normalize(
-                mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]
-            ),
-        ]
-    )
 
-    return train_transforms, val_transforms
+def load_datasets(
+    data_dir: str = "src/dataset", batch_size: int = 32, num_workers: int = 4
+) -> Tuple[DataLoader, DataLoader, DataLoader, List[str]]:
+    """Load training, validation and test datasets and create dataloaders.
 
-
-def load_datasets(data_dir="src/dataset", batch_size=32, num_workers=4):
-    """
-    Load the training, validation, and test datasets.
+    Loads image datasets from specified directory structure and creates
+    dataloaders for training, validation, and testing.
 
     Args:
-        data_dir: Path to the dataset directory
-        batch_size: Batch size for the dataloaders
-        num_workers: Number of workers for the dataloaders
+        data_dir: Path to the root dataset directory
+        batch_size: Number of samples per batch
+        num_workers: Number of worker processes for data loading
 
     Returns:
-        tuple: (train_dataloader, val_dataloader, test_dataloader, class_names)
+        Tuple containing:
+            - Training dataloader
+            - Validation dataloader
+            - Test dataloader
+            - List of class names
     """
-    train_transforms, val_transforms = get_data_transforms()
+    transforms_obj = get_data_transforms()
 
     train_dir = os.path.join(data_dir, "training")
     val_dir = os.path.join(data_dir, "validation")
     test_dir = os.path.join(data_dir, "test")
 
-    train_dataset = datasets.ImageFolder(
-        train_dir, transform=train_transforms
-    )
-    val_dataset = datasets.ImageFolder(val_dir, transform=val_transforms)
-    test_dataset = datasets.ImageFolder(test_dir, transform=val_transforms)
+    train_dataset = datasets.ImageFolder(train_dir, transform=transforms_obj)
+    val_dataset = datasets.ImageFolder(val_dir, transform=transforms_obj)
+    test_dataset = datasets.ImageFolder(test_dir, transform=transforms_obj)
 
     persistent_workers = num_workers > 0
 
@@ -126,23 +136,28 @@ def load_datasets(data_dir="src/dataset", batch_size=32, num_workers=4):
 
 
 def create_training_summary(
-    session_dir,
-    trained_model_path,
-    training_start_time,
-    training_args,
-    evaluation_results=None,
-    model=None,
-):
-    """
-    Create a summary text file for the training session.
+    session_dir: str,
+    trained_model_path: str,
+    training_start_time: float,
+    training_args: Any,
+    evaluation_results: Optional[Dict[str, Any]] = None,
+    model: Optional[Any] = None,
+) -> str:
+    """Create a comprehensive training summary text file.
+
+    Generates a detailed summary of the training run, including model
+    configuration, training parameters, and evaluation results.
 
     Args:
         session_dir: Path to the session directory
-        trained_model_path: Path to the trained model checkpoint
-        training_start_time: Time when training started
+        trained_model_path: Path to the saved model checkpoint
+        training_start_time: Timestamp when training began
         training_args: Arguments used for training
-        evaluation_results: Results from model evaluation
-        model: The trained model
+        evaluation_results: Optional results from model evaluation
+        model: Optional trained model object
+
+    Returns:
+        Path to the created summary file
     """
     summary_path = os.path.join(session_dir, "training_summary.txt")
 

@@ -1,29 +1,43 @@
+"""Visualization utilities for waste classification model evaluation.
+
+This module provides functions to generate various plots and visualizations
+to help interpret model performance, including:
+- Confusion matrix visualization
+- Sample prediction visualization with model outputs
+- Class distribution analysis across dataset splits
+"""
+
 import os
+import sys
+import random
+from typing import Dict, List, Optional, Any
+
 import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 import torch
-import torchvision
 from PIL import Image
-import random
-import sys
 
+# Add parent directory to path for imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if parent_dir not in sys.path:
     sys.path.insert(0, parent_dir)
 
-from evaluation.utils import get_default_model_path
 from training.utils import get_data_transforms
 
 
-def plot_confusion_matrix(cm, class_names, save_path):
-    """
-    Plot and save the confusion matrix.
+def plot_confusion_matrix(
+    cm: np.ndarray, class_names: List[str], save_path: str
+) -> None:
+    """Plot and save a confusion matrix as a heatmap.
+
+    Creates a normalized confusion matrix visualization with class labels and
+    saves it to the specified path.
 
     Args:
-        cm: Confusion matrix
-        class_names: List of class names
-        save_path: Path to save the confusion matrix plot
+        cm: Confusion matrix array from sklearn
+        class_names: List of class names corresponding to matrix indices
+        save_path: File path where the plot should be saved
     """
     plt.figure(figsize=(12, 10))
 
@@ -51,21 +65,23 @@ def plot_confusion_matrix(cm, class_names, save_path):
 
 
 def plot_sample_predictions(
-    model,
-    device,
-    data_dir="src/dataset/test",
-    num_samples=10,
-    save_path="output/sample_predictions.png",
-):
-    """
-    Plot sample images with their true and predicted labels.
+    model: torch.nn.Module,
+    device: torch.device,
+    data_dir: str = "src/dataset/test",
+    num_samples: int = 10,
+    save_path: str = "output/sample_predictions.png",
+) -> None:
+    """Plot sample images with model predictions for qualitative analysis.
+
+    Randomly selects images from each class and displays them with both true
+    labels and model predictions, color-coded by correctness.
 
     Args:
-        model: Trained PyTorch model
-        device: Device to run inference on
-        data_dir: Path to the test dataset
-        num_samples: Number of sample images to plot
-        save_path: Path to save the predictions plot
+        model: Trained PyTorch model to make predictions
+        device: Device (CPU/GPU) to run inference on
+        data_dir: Path to the test dataset directory
+        num_samples: Number of random samples to visualize
+        save_path: File path where the plot should be saved
     """
     model = model.to(device)
     model.eval()
@@ -78,7 +94,7 @@ def plot_sample_predictions(
 
     _, transform = get_data_transforms()
 
-    all_samples = []
+    all_samples: List[Dict[str, Any]] = []
     for class_idx, class_name in enumerate(class_names):
         class_dir = os.path.join(data_dir, class_name)
         image_files = [f for f in os.listdir(class_dir) if f.endswith(".jpg")]
@@ -118,13 +134,14 @@ def plot_sample_predictions(
             )
             sample["confidence"] = confidence
 
+    num_visualized = min(num_samples, len(selected_samples))
     fig, axes = plt.subplots(
-        min(num_samples, len(selected_samples)),
+        num_visualized,
         1,
-        figsize=(12, 4 * min(num_samples, len(selected_samples))),
+        figsize=(12, 4 * num_visualized),
     )
 
-    if min(num_samples, len(selected_samples)) == 1:
+    if num_visualized == 1:
         axes = [axes]
 
     for i, sample in enumerate(selected_samples):
@@ -150,14 +167,17 @@ def plot_sample_predictions(
 
 
 def plot_class_distribution(
-    data_dir="src/dataset", save_path="output/class_distribution.png"
-):
-    """
-    Plot the class distribution across training, validation, and test sets.
+    data_dir: str = "src/dataset",
+    save_path: str = "output/class_distribution.png",
+) -> None:
+    """Plot class distribution across training, validation, and test splits.
+
+    Creates a bar chart showing the number of samples per class across all
+    dataset splits, which is useful for analyzing dataset balance.
 
     Args:
-        data_dir: Path to the dataset directory
-        save_path: Path to save the class distribution plot
+        data_dir: Root directory containing training/validation/test folders
+        save_path: File path where the plot should be saved
     """
     train_dir = os.path.join(data_dir, "training")
     class_names = [
@@ -166,7 +186,7 @@ def plot_class_distribution(
         if os.path.isdir(os.path.join(train_dir, d))
     ]
 
-    counts = {"train": [], "val": [], "test": []}
+    counts: Dict[str, List[int]] = {"train": [], "val": [], "test": []}
 
     for split in ["training", "validation", "test"]:
         split_key = (
@@ -214,16 +234,25 @@ def plot_class_distribution(
 
 
 def create_visualizations(
-    evaluation_results, model, device, session_dir=None
-):
-    """
-    Create visualizations based on evaluation results.
+    evaluation_results: Dict[str, Any],
+    model: torch.nn.Module,
+    device: torch.device,
+    session_dir: Optional[str] = None,
+) -> Dict[str, str]:
+    """Create and save visualizations based on model evaluation results.
+
+    Serves as the main entry point for generating all visualizations after
+    model evaluation. Handles path management and calls individual visualization
+    functions.
 
     Args:
-        evaluation_results: Results from evaluate_model
-        model: Trained model
-        device: Device to run inference on
-        session_dir: Path to the session directory
+        evaluation_results: Dictionary containing model evaluation metrics
+        model: Trained PyTorch model for making predictions
+        device: Device (CPU/GPU) to run inference on
+        session_dir: Path to the session directory (if None, derives from model path)
+
+    Returns:
+        Dictionary with paths to all created visualization files
     """
     if session_dir is None:
         model_path = evaluation_results.get("model_path", "")
