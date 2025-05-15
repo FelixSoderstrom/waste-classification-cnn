@@ -92,7 +92,7 @@ def plot_sample_predictions(
         if os.path.isdir(os.path.join(data_dir, d))
     ]
 
-    _, transform = get_data_transforms()
+    transform = get_data_transforms()
 
     all_samples: List[Dict[str, Any]] = []
     for class_idx, class_name in enumerate(class_names):
