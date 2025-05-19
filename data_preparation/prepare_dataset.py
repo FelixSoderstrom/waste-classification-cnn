@@ -52,7 +52,7 @@ UNDER_REPRESENTED = {
 
 # Padding transformation to maintain aspect ratio
 class PadToSize:
-    """Pad image to target size with background filled by edge pixels."""
+    """Pad image to target size with black bars to maintain aspect ratio."""
 
     def __init__(self, size: Tuple[int, int]):
         self.size = size
@@ -69,18 +69,19 @@ class PadToSize:
         padding_top = padding_h // 2
         padding_bottom = padding_h - padding_top
 
-        # Apply padding
+        # Apply padding with black (value=0) instead of edge
         return F.pad(
             img,
             (padding_left, padding_top, padding_right, padding_bottom),
-            padding_mode="edge",
+            padding_mode="constant",
+            fill=0,  # Black color
         )
 
 
 # Base transform for all splits (resize with padding to maintain aspect ratio)
 base_transform = transforms.Compose(
     [
-        PadToSize(TARGET_SIZE),
+        PadToSize(TARGET_SIZE),  # Add black bars to maintain aspect ratio
         transforms.Resize(
             TARGET_SIZE, interpolation=transforms.InterpolationMode.BICUBIC
         ),
@@ -125,7 +126,7 @@ def create_directories():
 def prepare_balanced_dataset():
     """
     Prepare a balanced dataset with fixed numbers of images per class for test and validation:
-    1. Apply base transformation to ALL original images
+    1. Apply base transformation to ALL original images (padding with black bars to maintain aspect ratio)
     2. Create augmented versions based on category strategy
     3. Extract fixed number of original images per class for test and validation
     4. Use remaining original images + all augmented images for training
