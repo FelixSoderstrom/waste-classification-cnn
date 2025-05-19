@@ -9,11 +9,15 @@ This module provides helper functions for:
 import os
 import time
 import datetime
-from typing import Tuple, List, Dict, Any, Optional, Callable
+import math
+import random
+from collections import defaultdict
+from typing import Tuple, List, Dict, Any, Optional, Callable, Iterator, Set
 
+import numpy as np
 import torch
 from torchvision import transforms, datasets
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, Sampler
 
 # Type alias for transforms
 Transform = Callable[[Any], torch.Tensor]
@@ -70,6 +74,142 @@ def get_data_transforms() -> transforms.Compose:
     )
 
 
+class BalancedClassSampler(Sampler[int]):
+    """Sampler that ensures balanced class distribution in each epoch.
+
+    Ensures each class contributes the same number of samples in each epoch,
+    equal to the size of the smallest class. For larger classes, different
+    samples are selected in each epoch until all samples have been used.
+
+    Args:
+        dataset: Dataset to sample from (ImageFolder or Subset of ImageFolder)
+        epoch: Current epoch number (incremented for each epoch)
+    """
+
+    def __init__(self, dataset, epoch: int = 0):
+        self.dataset = dataset
+        self.epoch = epoch
+        self.num_samples = len(dataset)
+
+        # Handle both ImageFolder and Subset cases
+        if hasattr(dataset, "samples"):
+            # Direct ImageFolder
+            self._init_from_image_folder(dataset)
+        elif hasattr(dataset, "dataset") and hasattr(
+            dataset.dataset, "samples"
+        ):
+            # Subset of ImageFolder
+            self._init_from_subset(dataset)
+        else:
+            raise ValueError(
+                "Dataset must be either an ImageFolder or a Subset of ImageFolder"
+            )
+
+        # Calculate total number of samples per epoch (balanced)
+        self.samples_per_epoch = self.min_class_size * self.num_classes
+
+        # Print diagnostic information
+        print("\nClass distribution in dataset:")
+        print("-" * 40)
+
+        # Get class names if available
+        class_names = getattr(dataset, "classes", None)
+        if class_names is None and hasattr(dataset, "dataset"):
+            class_names = getattr(dataset.dataset, "classes", None)
+
+        for class_idx, indices in self.class_indices.items():
+            class_name = (
+                f"Class {class_idx}"
+                if class_names is None
+                else class_names[class_idx]
+            )
+            print(f"{class_name:<15}: {len(indices):>5} samples")
+
+        print("-" * 40)
+        print(f"Minimum class size: {self.min_class_size}")
+        print(f"Samples per balanced epoch: {self.samples_per_epoch}")
+        print(
+            f"Each class will contribute exactly {self.min_class_size} samples per epoch"
+        )
+        print("-" * 40)
+
+    def _init_from_image_folder(self, dataset):
+        """Initialize class indices from an ImageFolder dataset."""
+        self.class_indices: Dict[int, List[int]] = defaultdict(list)
+        for idx, (_, class_idx) in enumerate(dataset.samples):
+            self.class_indices[class_idx].append(idx)
+
+        # Find the size of the smallest class
+        self.min_class_size = min(
+            len(indices) for indices in self.class_indices.values()
+        )
+        self.num_classes = len(self.class_indices)
+
+    def _init_from_subset(self, subset):
+        """Initialize class indices from a Subset of an ImageFolder dataset."""
+        self.class_indices: Dict[int, List[int]] = defaultdict(list)
+        image_folder = subset.dataset
+
+        # Map from subset indices to original indices to class indices
+        for subset_idx, orig_idx in enumerate(subset.indices):
+            _, class_idx = image_folder.samples[orig_idx]
+            self.class_indices[class_idx].append(subset_idx)
+
+        # Find the size of the smallest class
+        self.min_class_size = min(
+            len(indices) for indices in self.class_indices.values()
+        )
+        self.num_classes = len(self.class_indices)
+
+    def __iter__(self) -> Iterator[int]:
+        # Set random seed based on epoch for reproducibility but different each epoch
+        g = torch.Generator()
+        g.manual_seed(42 + self.epoch)
+
+        indices = []
+        for class_idx, class_samples in self.class_indices.items():
+            # For each class, select min_class_size samples
+            # If there are more samples than min_class_size, rotate through them based on epoch
+            if len(class_samples) > self.min_class_size:
+                # Calculate starting position based on epoch (to rotate through samples)
+                start_idx = (self.epoch * self.min_class_size) % len(
+                    class_samples
+                )
+                # Take min_class_size samples, wrapping around if needed
+                selected_samples = (
+                    class_samples[start_idx:] + class_samples[:start_idx]
+                )
+                selected_samples = selected_samples[: self.min_class_size]
+            else:
+                # If class size is equal to or smaller than min_class_size, use all samples
+                selected_samples = class_samples
+
+            indices.extend(selected_samples)
+
+        # Shuffle the indices (while maintaining class balance)
+        shuffled_indices = torch.randperm(len(indices), generator=g).tolist()
+        return iter([indices[i] for i in shuffled_indices])
+
+    def __len__(self) -> int:
+        return self.samples_per_epoch
+
+    def set_epoch(self, epoch: int) -> None:
+        """Update the epoch counter for this sampler.
+
+        This should be called at the beginning of each epoch to ensure
+        different samples are selected from larger classes.
+
+        Args:
+            epoch: New epoch number
+        """
+        if epoch != self.epoch:
+            print(f"\nRotating samples for epoch {epoch}")
+            print(
+                f"This will use different samples from larger classes while maintaining class balance"
+            )
+        self.epoch = epoch
+
+
 def load_datasets(
     data_dir: str = "src/dataset", batch_size: int = 32, num_workers: int = 4
 ) -> Tuple[DataLoader, DataLoader, DataLoader, List[str]]:
@@ -77,6 +217,10 @@ def load_datasets(
 
     Loads image datasets from specified directory structure and creates
     dataloaders for training, validation, and testing.
+
+    For the training dataloader, uses a BalancedClassSampler to ensure each class
+    contributes the same number of samples in each epoch, equal to the size of the
+    smallest class.
 
     Args:
         data_dir: Path to the root dataset directory
@@ -102,10 +246,14 @@ def load_datasets(
 
     persistent_workers = num_workers > 0
 
+    # Create a balanced sampler for the training dataset
+    balanced_sampler = BalancedClassSampler(train_dataset)
+
+    # Use sampler instead of shuffle for training
     train_dataloader = DataLoader(
         train_dataset,
         batch_size=batch_size,
-        shuffle=True,
+        sampler=balanced_sampler,  # Use our custom sampler
         num_workers=num_workers,
         pin_memory=True,
         persistent_workers=persistent_workers,

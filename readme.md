@@ -104,40 +104,31 @@ Comprehensive evaluation tools including:
 
 ### Class Imbalance
 **Problem**: The original dataset had severely imbalanced class distribution (e.g., 5326 clothes images vs. 944 battery images).
-
 **Solution**: Implemented a two-pronged approach:
 1. Applied targeted augmentation to underrepresented classes
 2. Implemented weighted CrossEntropyLoss with weights inversely proportional to class frequencies
 
-### Inconsistent Accuracy Metrics
-**Problem**: Initial testing showed a significant discrepancy between Lightning's reported accuracy (~95%) and confusion matrix results (~27%).
-
-**Solution**:
-1. Identified that batch-wise accuracy calculation was misleading with imbalanced test sets
-2. Implemented overall accuracy calculation across all samples
-3. Designated classification report accuracy as the primary evaluation metric
-
-### Architecture Optimization
-**Problem**: Initial model architecture included an unnecessary 11th "other" class.
-
-**Solution**: Removed the extra class and streamlined the architecture to match the actual 10 categories.
-
 ### Dataset Split Timing
 **Problem**: Originally split data before augmentation, leading to imbalanced validation/test sets.
-
 **Solution**: Modified the data preparation pipeline to:
 1. Process and augment all original images first
 2. Extract a fixed number of original images for validation and test sets
 3. Use remaining originals plus augmented images for training
 
-### Dataset padding
-**Problem**: The dataset preparation script padded images to square sizes by uwing edge extrapolation. This added features in the image that does not exist. Most likely contributing to the models inability to generalize.
 
+### Dataset padding
+**Problem**: The dataset preparation script padded images to square sizes by using edge extrapolation. This added features in the image that does not exist. Most likely contributing to the models inability to generalize.
 **Solution**: Replace the edge extrapolation and fill "empty" pixels with balck ones. Black pixels will be a part of all classes, so it will not be a feature worth learning.
 
-### Dataset transformation during learning
-**Problem**: The dataset was being transformed during learning even though it had been pre-augmented.
 
+### Duplicate transformations
+**Problem**: The dataset was being transformed twice. Contributing to poor accuracy.
 **Solution**: Remove all transformation except for the ones made in the dataset preparation script.
+
+
+### Uneven class distribution
+**Problem**: The dataset has alot of uneven distributions between classes. This results in a heavy model that only likes to classify clothes...
+**Solution**: Underrepresented classes recieves multiple augmentation steps while overrepresented classes recieve none.
+I added a custom Sampler that ensures that each class recieves the same amount of images in each epoch and rotates through different samples from larger classes with each epoch.
 
 

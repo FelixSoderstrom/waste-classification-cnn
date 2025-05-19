@@ -11,7 +11,7 @@ either standard training or k-fold cross-validation. It handles:
 import os
 import sys
 import time
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 import torch
 import pytorch_lightning as pl
@@ -21,6 +21,7 @@ from pytorch_lightning.callbacks import (
     ModelCheckpoint,
     EarlyStopping,
     LearningRateMonitor,
+    Callback,
 )
 from torch.utils.data import DataLoader, Subset
 from sklearn.model_selection import KFold
@@ -31,7 +32,46 @@ from network.network import WasteClassifier
 from training.utils import (
     get_next_session_number,
     load_datasets,
+    BalancedClassSampler,
 )
+
+
+class SetEpochCallback(Callback):
+    """Callback to update epoch count in samplers that support set_epoch.
+
+    This callback is used to update the epoch in samplers like BalancedClassSampler
+    at the beginning of each epoch, ensuring proper rotation of samples.
+    """
+
+    def on_train_epoch_start(
+        self, trainer: pl.Trainer, pl_module: pl.LightningModule
+    ) -> None:
+        """Called at the beginning of each training epoch.
+
+        Updates the epoch count in the sampler of the training dataloader if it supports set_epoch.
+
+        Args:
+            trainer: The PyTorch Lightning trainer
+            pl_module: The LightningModule being trained
+        """
+        # Get the dataloader's sampler
+        if hasattr(trainer.train_dataloader, "sampler"):
+            sampler = trainer.train_dataloader.sampler
+        elif hasattr(trainer.train_dataloader, "dataset") and hasattr(
+            trainer.train_dataloader.dataset, "sampler"
+        ):
+            sampler = trainer.train_dataloader.dataset.sampler
+        else:
+            # Try the .loaders approach for newer PyTorch Lightning versions
+            try:
+                sampler = trainer.train_dataloader.loaders.sampler
+            except AttributeError:
+                # If we can't find the sampler, just return
+                return
+
+        # Update the epoch if the sampler supports it
+        if hasattr(sampler, "set_epoch"):
+            sampler.set_epoch(trainer.current_epoch)
 
 
 def train_model(
@@ -180,12 +220,20 @@ def train_standard(
 
     lr_monitor = LearningRateMonitor(logging_interval="step")
 
+    # Add our custom callback to update sampler epochs
+    set_epoch_callback = SetEpochCallback()
+
     trainer = pl.Trainer(
         max_epochs=max_epochs,
         accelerator="gpu" if torch.cuda.is_available() else "cpu",
         devices=1 if torch.cuda.is_available() else "auto",
         logger=wandb_logger,
-        callbacks=[checkpoint_callback, early_stopping_callback, lr_monitor],
+        callbacks=[
+            checkpoint_callback,
+            early_stopping_callback,
+            lr_monitor,
+            set_epoch_callback,
+        ],
         log_every_n_steps=10,
         deterministic=True,
     )
@@ -260,10 +308,13 @@ def train_with_cross_validation(
         fold_train_subset = Subset(train_dataset, train_idx)
         fold_val_subset = Subset(train_dataset, val_idx)
 
+        # Create a balanced sampler for this fold's training data
+        balanced_sampler = BalancedClassSampler(fold_train_subset)
+
         fold_train_loader = DataLoader(
             fold_train_subset,
             batch_size=train_dataloader.batch_size,
-            shuffle=True,
+            sampler=balanced_sampler,  # Use our custom sampler instead of shuffle
             num_workers=train_dataloader.num_workers,
             pin_memory=True,
             persistent_workers=persistent_workers,
@@ -304,12 +355,19 @@ def train_with_cross_validation(
             monitor="val_loss", patience=5, mode="min", verbose=True
         )
 
+        # Add our custom callback to update sampler epochs
+        set_epoch_callback = SetEpochCallback()
+
         trainer = pl.Trainer(
             max_epochs=max_epochs,
             accelerator="gpu" if torch.cuda.is_available() else "cpu",
             devices=1 if torch.cuda.is_available() else "auto",
             logger=wandb_logger,
-            callbacks=[checkpoint_callback, early_stopping_callback],
+            callbacks=[
+                checkpoint_callback,
+                early_stopping_callback,
+                set_epoch_callback,
+            ],
             log_every_n_steps=10,
             deterministic=True,
         )
