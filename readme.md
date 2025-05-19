@@ -130,5 +130,14 @@ Comprehensive evaluation tools including:
 2. Extract a fixed number of original images for validation and test sets
 3. Use remaining originals plus augmented images for training
 
-### Validation/Test discrepancy
-Still working on it..
+### Dataset padding
+**Problem**: The dataset preparation script padded images to square sizes by uwing edge extrapolation. This added features in the image that does not exist. Most likely contributing to the models inability to generalize.
+
+**Solution**: Replace the edge extrapolation and fill "empty" pixels with balck ones. Black pixels will be a part of all classes, so it will not be a feature worth learning.
+
+### Dataset transformation during learning
+**Problem**: The dataset was being transformed during learning even though it had been pre-augmented.
+
+**Solution**: Remove all transformation except for the ones made in the dataset preparation script.
+
+

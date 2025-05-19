@@ -40,8 +40,8 @@ def load_test_data(
 ) -> Tuple[DataLoader, List[str]]:
     """Load the test dataset for model evaluation.
 
-    Prepares a DataLoader for the test dataset with appropriate transforms
-    and settings for efficient evaluation.
+    Prepares a DataLoader for the test dataset with minimal transforms
+    (only ToTensor and Normalize) since images are already processed during dataset preparation.
 
     Args:
         data_dir: Path to the root dataset directory

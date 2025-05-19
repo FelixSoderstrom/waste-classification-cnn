@@ -54,15 +54,14 @@ def get_data_transforms() -> transforms.Compose:
     """Get data transformations for training and validation datasets.
 
     Creates preprocessing transforms for model input images.
-    No augmentation is applied since the dataset is already augmented.
+    Only tensor conversion and normalization are applied, since images are
+    already resized and processed during dataset preparation.
 
     Returns:
-        A transforms.Compose object with image preprocessing steps.
+        A transforms.Compose object with minimal image preprocessing steps.
     """
     return transforms.Compose(
         [
-            transforms.Resize(256),
-            transforms.CenterCrop(224),
             transforms.ToTensor(),
             transforms.Normalize(
                 mean=[0.485, 0.456, 0.406], std=[0.229, 0.224, 0.225]

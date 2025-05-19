@@ -92,6 +92,7 @@ def plot_sample_predictions(
         if os.path.isdir(os.path.join(data_dir, d))
     ]
 
+    # Get minimal transforms (ToTensor and Normalize) since images are already processed
     transform = get_data_transforms()
 
     all_samples: List[Dict[str, Any]] = []
@@ -103,7 +104,9 @@ def plot_sample_predictions(
             sample_file = random.choice(image_files)
             sample_path = os.path.join(class_dir, sample_file)
 
+            # Open the original image for display
             image = Image.open(sample_path).convert("RGB")
+            # Apply only necessary transformations for the model
             tensor = transform(image).unsqueeze(0)
 
             all_samples.append(
