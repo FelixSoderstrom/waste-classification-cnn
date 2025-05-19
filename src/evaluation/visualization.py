@@ -130,7 +130,7 @@ def plot_sample_predictions(
             sample["pred_label"] = (
                 class_names[pred_class]
                 if pred_class < len(class_names)
-                else "other"
+                else "unknown"
             )
             sample["confidence"] = confidence
 

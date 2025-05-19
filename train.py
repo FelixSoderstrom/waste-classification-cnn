@@ -4,6 +4,19 @@ This script handles the entire workflow for waste classification models, includi
 1. Training a CNN model with optional cross-validation
 2. Evaluating the model on a test dataset
 3. Creating visualizations of model performance
+
+Default values:
+    Learning Rate: 0.001
+    Weight Decay: 0.0005
+    Batch Size: 32
+    Max Epochs: 20
+    Number of Workers: 4
+    Project Name: waste-material-classification
+    Cross Validation: True
+    Number of Cross Validation Splits: 5
+    Skip Training: False
+    Skip Evaluation: False
+    Model Path: None
 """
 
 import os

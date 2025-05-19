@@ -209,8 +209,12 @@ def create_training_summary(
             f.write("EVALUATION RESULTS\n")
             f.write("-" * 80 + "\n")
             f.write(
-                f"Test Accuracy: {evaluation_results['test_accuracy']:.4f}\n"
+                f"Test Accuracy (Primary Metric): {evaluation_results['test_accuracy']:.4f}\n"
             )
+            if "test_batch_wise_accuracy" in evaluation_results:
+                f.write(
+                    f"Test Batch-Wise Accuracy (Lightning): {evaluation_results['test_batch_wise_accuracy']:.4f}\n"
+                )
             f.write(f"Test Loss: {evaluation_results['test_loss']:.4f}\n\n")
 
             f.write("CLASSIFICATION REPORT\n")

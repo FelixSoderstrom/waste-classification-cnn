@@ -14,11 +14,16 @@ import sys
 from typing import Dict, List, Tuple, Any, Optional
 
 import pandas as pd
+import numpy as np
 import torch
 import pytorch_lightning as pl
 from torch.utils.data import DataLoader
 from torchvision import datasets
-from sklearn.metrics import classification_report, confusion_matrix
+from sklearn.metrics import (
+    classification_report,
+    confusion_matrix,
+    accuracy_score,
+)
 
 # Add parent directory to path for imports
 parent_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -69,6 +74,25 @@ def load_test_data(
     return test_dataloader, class_names
 
 
+def calculate_overall_accuracy(
+    predictions: List[int], targets: List[int]
+) -> float:
+    """Calculate overall accuracy across all samples.
+
+    Unlike the batch-wise accuracy calculated by PyTorch Lightning,
+    this calculates accuracy across the entire dataset, which better
+    handles class imbalance.
+
+    Args:
+        predictions: List of model predictions
+        targets: List of ground truth labels
+
+    Returns:
+        Overall accuracy as a float
+    """
+    return accuracy_score(targets, predictions)
+
+
 def evaluate_model(
     model_path: Optional[str] = None,
     batch_size: int = 32,
@@ -86,7 +110,8 @@ def evaluate_model(
 
     Returns:
         Dictionary containing comprehensive evaluation results:
-            - test_accuracy: Overall accuracy on test set
+            - test_accuracy: Overall accuracy on test set (calculated across all samples)
+            - test_batch_wise_accuracy: Accuracy as calculated by PyTorch Lightning (batch-wise average)
             - test_loss: Loss on test set
             - classification_report: Per-class precision, recall, F1
             - confusion_matrix: Matrix showing predicted vs actual class counts
@@ -97,6 +122,7 @@ def evaluate_model(
             - device: Device used for evaluation
             - model_path: Path to the model checkpoint
             - session_dir: Directory of the training session
+            - primary_metric: Indicating the primary metric
 
     Raises:
         FileNotFoundError: If the specified model path does not exist
@@ -156,7 +182,7 @@ def evaluate_model(
 
     test_results = trainer.test(model, test_dataloader)
 
-    print(f"Test accuracy: {test_results[0]['test_acc']:.4f}")
+    print(f"Batch-wise test accuracy: {test_results[0]['test_acc']:.4f}")
     print(f"Test loss: {test_results[0]['test_loss']:.4f}")
 
     all_preds: List[int] = []
@@ -177,6 +203,16 @@ def evaluate_model(
             all_preds.extend(preds.cpu().numpy())
             all_targets.extend(y.cpu().numpy())
 
+    # Calculate overall accuracy across all samples
+    overall_accuracy = calculate_overall_accuracy(all_preds, all_targets)
+    print(
+        f"Overall test accuracy (across all samples): {overall_accuracy:.4f}"
+    )
+    print(f"(This is the primary evaluation metric)")
+    print(
+        f"Batch-wise test accuracy (Lightning): {test_results[0]['test_acc']:.4f}"
+    )
+
     report = classification_report(
         all_targets, all_preds, target_names=class_names, output_dict=True
     )
@@ -194,7 +230,10 @@ def evaluate_model(
         session_dir = os.path.dirname(model_dir)
 
     results = {
-        "test_accuracy": test_results[0]["test_acc"],
+        "test_accuracy": overall_accuracy,  # Overall accuracy across all samples
+        "test_batch_wise_accuracy": test_results[0][
+            "test_acc"
+        ],  # Original batch-wise accuracy
         "test_loss": test_results[0]["test_loss"],
         "classification_report": report,
         "confusion_matrix": cm,
@@ -205,6 +244,7 @@ def evaluate_model(
         "device": device,
         "model_path": model_path,
         "session_dir": session_dir,
+        "primary_metric": "test_accuracy",  # Indicating the primary metric
     }
 
     return results

@@ -1,6 +1,7 @@
 ignore_folder/
 original_dataset/
 dataset/
+dataset_old/
 lightning_logs/
 venv/
 wandb/
