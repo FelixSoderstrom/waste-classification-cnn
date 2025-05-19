@@ -4,11 +4,12 @@ import torchvision.models as models
 import pytorch_lightning as pl
 import numpy as np
 from typing import Dict, Any, List, Optional, Union
+from efficientnet_pytorch import EfficientNet
 
 
 class WasteClassifier(pl.LightningModule):
     """
-    Transfer learning model based on ResNet50 for waste classification.
+    Transfer learning model based on EfficientNet-B0 for waste classification.
     The model is trained on 10 categories of waste materials.
     """
 
@@ -42,17 +43,17 @@ class WasteClassifier(pl.LightningModule):
         # Store class weights if provided
         self.class_weights = class_weights
 
-        # Load pretrained ResNet50 model
-        self.model = models.resnet50(weights="IMAGENET1K_V2")
+        # Load pretrained EfficientNet-B0 model
+        self.model = EfficientNet.from_pretrained("efficientnet-b0")
 
         # Freeze all layers except the last few
         for name, param in self.model.named_parameters():
-            if "layer4" not in name and "fc" not in name:
+            if not any(x in name for x in ["_fc", "_conv_head", "_bn1"]):
                 param.requires_grad = False
 
         # Replace the final fully connected layer for our classification task
-        in_features = self.model.fc.in_features
-        self.model.fc = nn.Sequential(
+        in_features = self.model._fc.in_features
+        self.model._fc = nn.Sequential(
             nn.Linear(in_features, 512),
             nn.ReLU(),
             nn.Dropout(0.3),

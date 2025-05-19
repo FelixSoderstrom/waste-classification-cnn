@@ -8,16 +8,16 @@ This project stems from my passion for environmental conservation, inspired by v
 
 ## Features
 - Classification of waste into 10 categories (battery, biological, cardboard, clothes, glass, metal, paper, plastic, shoes, trash)
-- Transfer learning using ResNet50 pre-trained on ImageNet
+- Transfer learning using EfficientNet-B0 pre-trained on ImageNet
 - Dynamic dataset augmentation to handle class imbalance
 - Weighted loss function for unbalanced classes
 - Standardized evaluation metrics
 
 ## Model Architecture
-- ResNet50 backbone pre-trained on ImageNet
-- Frozen weights except for the final layer and fully connected layers
+- EfficientNet-B0 backbone pre-trained on ImageNet
+- Frozen weights except for the final layers (_fc, _conv_head, _bn1)
 - Custom classification head:
-  - Linear layer (2048 → 512)
+  - Linear layer (1280 → 512)
   - ReLU activation
   - Dropout (0.3) for regularization
   - Output layer (512 → 10 classes)
@@ -132,3 +132,6 @@ Comprehensive evaluation tools including:
 I added a custom Sampler that ensures that each class recieves the same amount of images in each epoch and rotates through different samples from larger classes with each epoch.
 
 
+### Model Architecture Upgrade
+**Problem**: ResNet50 was not performing well on texture-based classification tasks like waste material recognition.
+**Solution**: Upgraded to EfficientNet-B0, which has been shown to perform better on texture classification while requiring fewer parameters. EfficientNet-B0 achieves better accuracy with approximately 5.3M parameters compared to ResNet50's 25.6M parameters. 

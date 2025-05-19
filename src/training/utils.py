@@ -336,10 +336,10 @@ def create_training_summary(
         if model:
             f.write("MODEL ARCHITECTURE\n")
             f.write("-" * 80 + "\n")
-            f.write("Base Model: ResNet50 (pretrained on ImageNet)\n")
-            f.write("Fine-tuning: Last layer and FC layers\n")
+            f.write("Base Model: EfficientNet-B0 (pretrained on ImageNet)\n")
+            f.write("Fine-tuning: Final layers (_fc, _conv_head, _bn1)\n")
             f.write(
-                "Classification Head: Linear(2048→512) → ReLU → Dropout(0.3) → Linear(512→num_classes)\n"
+                "Classification Head: Linear(1280→512) → ReLU → Dropout(0.3) → Linear(512→num_classes)\n"
             )
 
             try:
